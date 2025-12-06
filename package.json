@@ -18,7 +18,49 @@
   "devDependencies": {
     "typescript": "^5.0.0",
     "koishi": "^4.0.0"
+  },{
+  "name": "koishi-plugin-zhukong-shop",
+  "version": "1.0.0",
+  "description": "基于 zhukong-currency-system 的 Koishi 积分商城插件",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "author": "竹空",
+  "license": "MIT",
+  "homepage": "https://github.com/zhukongqwq/zhukong-shop.git",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhukongqwq/zhukong-shop.git"
   },
+  "bugs": {
+    "url": "https://github.com/zhukongqwq/zhukong-shop./issues"
+  },
+  "keywords": [
+    "koishi",
+    "plugin",
+    "shop",
+    "currency",
+    "market",
+    "积分",
+    "商城",
+    "zhukong"
+  ],
+  "peerDependencies": {
+    "koishi": "^4.15.0",
+    "koishi-plugin-zhukong-currency-system": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "koishi": "^4.15.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w"
+  },
+  "files": [
+    "lib",
+    "src"
+  ]
+}
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w"
