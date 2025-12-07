@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-zhukong-shop",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "基于 zhukong-currency-system 的 Koishi 积分商城插件，提供命令行与可视化商品管理。",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",

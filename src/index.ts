@@ -1,6 +1,6 @@
 import { Context, Schema, h, Session } from 'koishi'
-import { resolve } from 'path' // 新增：导入 resolve 函数
-import {} from '@koishijs/plugin-console' // 确保这行存在，用于引入类型
+import { resolve } from 'path'
+import {} from '@koishijs/plugin-console'
 
 // 扩展 Koishi 的类型定义
 declare module 'koishi' {
@@ -17,6 +17,18 @@ declare module 'koishi' {
     'currency/add'(userId: string, amount: number): Promise<void> | void
   }
 }
+
+// 扩展控制台事件类型 - 按照官方文档的正确方式
+declare module '@koishijs/plugin-console' {
+  interface Events {
+    'zhukong-shop/list'(): Promise<any>
+    'zhukong-shop/add'(data: any): Promise<any>
+    'zhukong-shop/update'(data: any): Promise<any>
+    'zhukong-shop/delete'(data: any): Promise<any>
+  }
+}
+
+// ... 其他代码保持不变 ...
 
 // 商品类型定义
 export interface ShopItem {
@@ -953,133 +965,125 @@ export function apply(ctx: Context, config: Config) {
   }
   
   ctx.inject(['console'], (ctx) => {
-    // 注意：此处的 ctx 是注入后的新上下文，它包含了 console 属性
     ctx.console.addEntry({
       dev: resolve(__dirname, '../client/index.ts'),
       prod: resolve(__dirname, '../dist'),
     })
 
-    // 使用 ctx.once 确保只注册一次
-    ctx.once('ready', async () => {
-      ctx.logger.info('商店插件：注册控制台API')
-      
-      // 为前端提供 API 方法 - 使用正确的方式
-      // 方法1：使用 get 方法（推荐）
-      ctx.console.get('zhukong-shop/list', async () => {
-        try {
-          const items = await ctx.database.get('shop_items', {})
-          return items
-        } catch (error) {
-          ctx.logger.error('获取商品列表失败:', error)
-          throw error
+    // 为前端提供 API 方法
+    ctx.console.addListener('zhukong-shop/list', async () => {
+      try {
+        const items = await ctx.database.get('shop_items', {})
+        return items
+      } catch (error) {
+        ctx.logger.error('获取商品列表失败:', error)
+        throw error
+      }
+    })
+    
+    ctx.console.addListener('zhukong-shop/add', async (data: any) => {
+      try {
+        if (!data.name || !data.price || !data.type) {
+          throw new Error('缺少必要参数：名称、价格、类型')
         }
-      })
-      
-      // 方法2：使用 post 方法
-      ctx.console.post('zhukong-shop/add', async (data: any) => {
-        try {
-          if (!data.name || !data.price || !data.type) {
-            throw new Error('缺少必要参数：名称、价格、类型')
-          }
-          
-          const existing = await ctx.database.get('shop_items', { name: data.name })
-          if (existing.length > 0) {
-            throw new Error('商品名称已存在')
-          }
-          
-          const item = await ctx.database.create('shop_items', {
-            name: data.name,
-            description: data.description || '暂无描述',
-            price: data.price,
-            type: data.type,
-            command: data.command || '',
-            max_usage: data.max_usage || config.defaultMaxUsage,
-            cooldown: data.cooldown || config.defaultCooldown,
-            enabled: data.enabled !== undefined ? data.enabled : true,
-            stock: data.stock !== undefined ? data.stock : -1,
-            created_at: new Date(),
-            updated_at: new Date(),
-          })
-          
-          if (config.enableLogging) {
-            ctx.logger.info(`通过管理界面添加商品: ${data.name}`)
-          }
-          
-          return item
-        } catch (error) {
-          ctx.logger.error('添加商品失败:', error)
-          throw error
+        
+        const existing = await ctx.database.get('shop_items', { name: data.name })
+        if (existing.length > 0) {
+          throw new Error('商品名称已存在')
         }
-      })
-      
-      ctx.console.post('zhukong-shop/update', async (data: any) => {
-        try {
-          if (!data.id) {
-            throw new Error('缺少商品ID')
-          }
-          
-          const items = await ctx.database.get('shop_items', { id: data.id })
-          if (items.length === 0) {
-            throw new Error('商品不存在')
-          }
-          
-          const updateData: any = { updated_at: new Date() }
-          if (data.name !== undefined) updateData.name = data.name
-          if (data.description !== undefined) updateData.description = data.description
-          if (data.price !== undefined) updateData.price = data.price
-          if (data.stock !== undefined) updateData.stock = data.stock
-          if (data.enabled !== undefined) updateData.enabled = data.enabled
-          if (data.max_usage !== undefined) updateData.max_usage = data.max_usage
-          if (data.cooldown !== undefined) updateData.cooldown = data.cooldown
-          if (data.command !== undefined) updateData.command = data.command
-          if (data.type !== undefined) updateData.type = data.type
-          
-          await ctx.database.set('shop_items', { id: data.id }, updateData)
-          
-          const item = items[0]
-          if (config.enableLogging) {
-            ctx.logger.info(`通过管理界面更新商品: ${item.name}`)
-          }
-          
-          return { success: true }
-        } catch (error) {
-          ctx.logger.error('更新商品失败:', error)
-          throw error
+        
+        const item = await ctx.database.create('shop_items', {
+          name: data.name,
+          description: data.description || '暂无描述',
+          price: data.price,
+          type: data.type,
+          command: data.command || '',
+          max_usage: data.max_usage || config.defaultMaxUsage,
+          cooldown: data.cooldown || config.defaultCooldown,
+          enabled: data.enabled !== undefined ? data.enabled : true,
+          stock: data.stock !== undefined ? data.stock : -1,
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        
+        if (config.enableLogging) {
+          ctx.logger.info(`通过管理界面添加商品: ${data.name}`)
         }
-      })
-      
-      ctx.console.post('zhukong-shop/delete', async (data: any) => {
-        try {
-          if (!data.id) {
-            throw new Error('缺少商品ID')
-          }
-          
-          const items = await ctx.database.get('shop_items', { id: data.id })
-          if (items.length === 0) {
-            throw new Error('商品不存在')
-          }
-          
-          const item = items[0]
-          
-          const purchases = await ctx.database.get('shop_purchases', { item_id: data.id })
-          const purchaseIds = purchases.map(p => p.id)
-          
-          if (purchaseIds.length > 0) {
-            await ctx.database.remove('shop_usage', { purchase_id: purchaseIds })
-          }
-          await ctx.database.remove('shop_purchases', { item_id: data.id })
-          await ctx.database.remove('shop_items', { id: data.id })
-          
-          if (config.enableLogging) {
-            ctx.logger.info(`通过管理界面删除商品: ${item.name}`)
-          }
-          
-          return { success: true }
-        } catch (error) {
-          ctx.logger.error('删除商品失败:', error)
-          throw error
+        
+        return item
+      } catch (error) {
+        ctx.logger.error('添加商品失败:', error)
+        throw error
+      }
+    })
+    
+    ctx.console.addListener('zhukong-shop/update', async (data: any) => {
+      try {
+        if (!data.id) {
+          throw new Error('缺少商品ID')
         }
-      })
+        
+        const items = await ctx.database.get('shop_items', { id: data.id })
+        if (items.length === 0) {
+          throw new Error('商品不存在')
+        }
+        
+        const updateData: any = { updated_at: new Date() }
+        if (data.name !== undefined) updateData.name = data.name
+        if (data.description !== undefined) updateData.description = data.description
+        if (data.price !== undefined) updateData.price = data.price
+        if (data.stock !== undefined) updateData.stock = data.stock
+        if (data.enabled !== undefined) updateData.enabled = data.enabled
+        if (data.max_usage !== undefined) updateData.max_usage = data.max_usage
+        if (data.cooldown !== undefined) updateData.cooldown = data.cooldown
+        if (data.command !== undefined) updateData.command = data.command
+        if (data.type !== undefined) updateData.type = data.type
+        
+        await ctx.database.set('shop_items', { id: data.id }, updateData)
+        
+        const item = items[0]
+        if (config.enableLogging) {
+          ctx.logger.info(`通过管理界面更新商品: ${item.name}`)
+        }
+        
+        return { success: true }
+      } catch (error) {
+        ctx.logger.error('更新商品失败:', error)
+        throw error
+      }
+    })
+    
+    ctx.console.addListener('zhukong-shop/delete', async (data: any) => {
+      try {
+        if (!data.id) {
+          throw new Error('缺少商品ID')
+        }
+        
+        const items = await ctx.database.get('shop_items', { id: data.id })
+        if (items.length === 0) {
+          throw new Error('商品不存在')
+        }
+        
+        const item = items[0]
+        
+        const purchases = await ctx.database.get('shop_purchases', { item_id: data.id })
+        const purchaseIds = purchases.map(p => p.id)
+        
+        if (purchaseIds.length > 0) {
+          await ctx.database.remove('shop_usage', { purchase_id: purchaseIds })
+        }
+        await ctx.database.remove('shop_purchases', { item_id: data.id })
+        await ctx.database.remove('shop_items', { id: data.id })
+        
+        if (config.enableLogging) {
+          ctx.logger.info(`通过管理界面删除商品: ${item.name}`)
+        }
+        
+        return { success: true }
+      } catch (error) {
+        ctx.logger.error('删除商品失败:', error)
+        throw error
+      }
     })
   })
   
