@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-zhukong-shop",
   "version": "1.0.1",
-  "description": "基于 zhukong-currency-system 的 Koishi 积分商城插件",
+  "description": "基于 zhukong-currency-system 的 Koishi 积分商城插件，提供命令行与可视化商品管理。",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "author": "竹空",
@@ -20,24 +20,46 @@
     "shop",
     "currency",
     "market",
+    "economy",
     "积分",
     "商城",
     "zhukong"
   ],
   "peerDependencies": {
+    "@koishijs/plugin-console": "^5.11.0",
     "koishi": "^4.15.0",
     "koishi-plugin-zhukong-currency-system": "*"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "koishi": "^4.15.0"
+    "@koishijs/client": "^5.11.0",
+    "@types/node": "^20.0.0",
+    "koishi": "^4.15.0",
+    "typescript": "^5.0.0"
   },
   "scripts": {
     "build": "tsc",
+    "build:client": "cd client && tsc --noEmit && vue-tsc --noEmit",
     "dev": "tsc -w"
   },
   "files": [
     "lib",
+    "client",
     "src"
-  ]
+  ],
+  "koishi": {
+    "description": {
+      "zh": "一个功能完整的积分商城插件，支持查询、购买、管理商品，并提供可视化控制台界面。"
+    },
+    "service": {
+      "required": [
+        "database"
+      ],
+      "optional": [
+        "console"
+      ]
+    },
+    "locales": [
+      "zh"
+    ]
+  }
 }
