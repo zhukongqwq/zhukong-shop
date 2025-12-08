@@ -28,7 +28,7 @@
   "peerDependencies": {
     "@koishijs/plugin-console": "^5.11.0",
     "koishi": "^4.15.0",
-    "koishi-plugin-zhukong-currency-system": "*"
+    "koishi-plugin-zhukong-currency-system": "1.0.1"
   },
   "devDependencies": {
     "@koishijs/client": "^5.11.0",
