@@ -33,23 +33,24 @@
     "koishi-plugin-zhukong-currency-system": "^1.0.0"
   },
   "optionalDependencies": {
-    "@koishijs/plugin-console": "^5.11.0"
+    "@koishijs/plugin-console": "^5.30.11"
   },
   "devDependencies": {
-    "@koishijs/client": "^5.11.0",
+    "@koishijs/client": "^5.30.4",
     "@types/node": "^20.0.0",
     "koishi": "^4.15.0",
     "typescript": "^5.0.0",
     "vue": "^3.3.0"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc -w",
+    "build": "koishi-scripts build",
+    "dev": "koishi-scripts dev",
     "lint": "eslint src --ext .ts",
     "prepublishOnly": "npm run build"
   },
   "files": [
     "lib",
+    "dist",
     "client",
     "README.md",
     "LICENSE"

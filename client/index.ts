@@ -1,5 +1,5 @@
 import { Context } from '@koishijs/client'
-import ShopAdmin from './components/ShopAdmin.vue'
+import ShopAdmin from './ShopAdmin.vue'
 
 export default (ctx: Context) => {
   // 此 Context 是前端的插件上下文，用于注册页面

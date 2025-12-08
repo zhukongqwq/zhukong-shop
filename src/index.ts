@@ -932,10 +932,11 @@ export function apply(ctx: Context, config: Config) {
 	}
 
   ctx.inject(['console'], (ctx) => {
-    ctx.console.addEntry({
-      dev: resolve(__dirname, '../client/index.ts'),
-      prod: resolve(__dirname, '../dist'),
-    })
+    const prodPath = resolve(__dirname, '../dist') 
+	  ctx.console.addEntry({
+		dev: resolve(__dirname, '../client/index.ts'),
+		prod: prodPath, 
+	  })
 
     ctx.console.addListener('zhukong-shop/list', async () => {
       try {
