@@ -866,69 +866,70 @@ export function apply(ctx: Context, config: Config) {
       return message
     })
 
-// 7. 中间件：自动拦截已购买的命令 - 修复权限问题
-  if (config.enableLogging) {
-    ctx.middleware(async (session, next) => {
-      const { content } = session
+	// 7. 中间件：自动拦截已购买的命令 - 修复权限问题
+	if (config.enableLogging) {
+	  ctx.middleware(async (session, next) => {
+		const { content } = session
 
-      // 检查是否是命令
-      if (content && content.startsWith(config.commandPrefix)) {
-        const commandName = content.split(' ')[0].slice(config.commandPrefix.length)
+		// 检查是否是命令
+		if (content && content.startsWith(config.commandPrefix)) {
+		  const commandName = content.split(' ')[0].slice(config.commandPrefix.length)
 
-        // 跳过 $use 命令本身
-        if (commandName === 'use' || commandName === '使用') {
-          return next()
-        }
+		  // 跳过 $use 命令本身
+		  if (commandName === 'use' || commandName === '使用') {
+			return next()
+		  }
 
-        // 检查是否是商店商品
-        const shopResult = await executeCommandWithShopPermission(ctx, session, commandName, config)
+		  // 检查是否是商店商品
+		  const shopResult = await executeCommandWithShopPermission(ctx, session, commandName, config)
 
-        if (shopResult === null) {
-          // 不是商店商品或用户未购买，按正常流程执行
-          return next()
-        }
+		  if (shopResult === null) {
+			// 不是商店商品或用户未购买，按正常流程执行
+			return next()
+		  }
 
-        if (typeof shopResult === 'string') {
-          // 返回冷却时间或次数用完的消息
-          return shopResult
-        }
+		  if (typeof shopResult === 'string') {
+			// 返回冷却时间或次数用完的消息
+			return shopResult
+		  }
 
-        // 先发送使用成功消息
-        await session.send(shopResult.usageMessage)
+		  // 先发送使用成功消息
+		  await session.send(shopResult.usageMessage)
 
-        // 保存原始权限
-        const originalAuthority = session.user?.authority
+		  // 保存原始权限 - 使用类型断言
+		  const user = session.user as any
+		  const originalAuthority = user?.authority
+		  
+		  // 临时提升权限以执行命令
+		  if (user) {
+			user.authority = 5 // 设置为管理员权限
+		  }
 
-        // 临时提升权限以执行命令
-        if (session.user) {
-          session.user.authority = 5 // 设置为管理员权限
-        }
+		  try {
+			// 使用完整的命令字符串
+			const fullCommand = `${commandName}`
+			const commandResult = await session.execute(fullCommand)
 
-        try {
-          // 使用完整的命令字符串
-          const fullCommand = `${commandName}`
-          const commandResult = await session.execute(fullCommand)
+			// 如果命令有返回值，也发送
+			if (commandResult) {
+			  await session.send(commandResult)
+			}
+		  } catch (error) {
+			ctx.logger.error(`执行命令 ${commandName} 失败:`, error)
+		  } finally {
+			// 恢复原始权限
+			if (user && originalAuthority !== undefined) {
+			  user.authority = originalAuthority
+			}
+		  }
 
-          // 如果命令有返回值，也发送
-          if (commandResult) {
-            await session.send(commandResult)
-          }
-        } catch (error) {
-          ctx.logger.error(`执行命令 ${commandName} 失败:`, error)
-        } finally {
-          // 恢复原始权限
-          if (session.user && originalAuthority !== undefined) {
-            session.user.authority = originalAuthority
-          }
-        }
+		  // 不返回任何内容，因为消息已经发送了
+		  return
+		}
 
-        // 不返回任何内容，因为消息已经发送了
-        return
-      }
-
-      return next()
-    })
-  }
+		return next()
+	  })
+	}
 
   ctx.inject(['console'], (ctx) => {
     ctx.console.addEntry({
