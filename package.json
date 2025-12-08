@@ -1,10 +1,10 @@
 {
   "name": "koishi-plugin-zhukong-shop",
   "version": "1.1.0",
-  "description": "基于 zhukong-currency-system 的 Koishi 积分商城插件，提供命令行与可视化商品管理。",
+  "description": "Koishi积分商城插件 - 提供完整的商品购买、命令次数限制与可视化管理系统",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
-  "author": "竹空",
+  "author": "竹空 <zhukongqwq@qq.com>",
   "license": "MIT",
   "homepage": "https://github.com/zhukongqwq/zhukong-shop",
   "repository": {
@@ -18,37 +18,46 @@
     "koishi",
     "plugin",
     "shop",
-    "currency",
     "market",
+    "currency",
     "economy",
     "积分",
     "商城",
-    "zhukong"
+    "zhukong",
+    "command",
+    "usage",
+    "limit"
   ],
   "peerDependencies": {
-    "@koishijs/plugin-console": "^5.11.0",
     "koishi": "^4.15.0",
-    "koishi-plugin-zhukong-currency-system": "1.0.1"
+    "koishi-plugin-zhukong-currency-system": "^1.0.0"
+  },
+  "optionalDependencies": {
+    "@koishijs/plugin-console": "^5.11.0"
   },
   "devDependencies": {
     "@koishijs/client": "^5.11.0",
     "@types/node": "^20.0.0",
     "koishi": "^4.15.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vue": "^3.3.0"
   },
   "scripts": {
     "build": "tsc",
-    "build:client": "cd client && tsc --noEmit && vue-tsc --noEmit",
-    "dev": "tsc -w"
+    "dev": "tsc -w",
+    "lint": "eslint src --ext .ts",
+    "prepublishOnly": "npm run build"
   },
   "files": [
     "lib",
     "client",
-    "src"
+    "README.md",
+    "LICENSE"
   ],
   "koishi": {
     "description": {
-      "zh": "一个功能完整的积分商城插件，支持查询、购买、管理商品，并提供可视化控制台界面。"
+      "zh": "功能完整的积分商城插件，支持命令次数购买、商品管理、消费记录追踪与可视化控制台界面",
+      "en": "Complete points shop plugin for Koishi, supporting command usage purchases, item management, consumption tracking, and visual console interface"
     },
     "service": {
       "required": [
@@ -56,10 +65,19 @@
       ],
       "optional": [
         "console"
+      ],
+      "implements": [
+        "shop"
       ]
     },
     "locales": [
       "zh"
-    ]
+    ],
+    "category": "economy",
+    "preview": true,
+    "hidden": false
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
