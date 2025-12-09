@@ -3,8 +3,8 @@
     <template #header>
       <k-header>
         <div class="shop-header-content" style="display: flex; align-items: center; gap: 8px;">
-          <i class="k-icon" style="font-size: 18px;">
-            <ShopIcon />
+          <i class="k-icon shop-admin-icon-container">
+            <ShopIcons />
           </i>
           <span>积分商城管理</span>
         </div>
@@ -12,9 +12,7 @@
     </template>
     
     <template #default>
-      <!-- 原有内容保持不变 -->
       <div class="shop-container">
-        <!-- 头部操作栏 -->
         <div class="shop-header">
           <div class="header-actions">
             <div class="search-input">
@@ -33,7 +31,6 @@
           </div>
         </div>
 
-        <!-- 商品列表 -->
         <k-card class="shop-list-card">
           <div v-if="loading" class="loading-container">
             加载中...
@@ -98,7 +95,6 @@
           </div>
         </k-card>
 
-        <!-- 添加/编辑商品对话框 -->
         <div v-if="showDialog" class="modal-overlay" @click.self="showDialog = false">
           <div class="modal-dialog">
             <div class="modal-header">
@@ -249,8 +245,8 @@ import { ref, computed, onMounted } from 'vue'
 import { send, store } from '@koishijs/client'
 import type {} from '@koishijs/plugin-console'
 
-// 导入图标组件
-import ShopIcon from './icons/ShopIcon.vue'
+// 更改 3: 导入 ShopIcons (复数形式)
+import ShopIcons from './icons/ShopIcons.vue'
 
 interface ShopItem {
   id: number
@@ -1063,5 +1059,20 @@ const deleteItem = async (item: ShopItem) => {
   .shop-table td {
     padding: 12px 8px;
   }
+}
+
+/* 更改 4: 新增样式以修复图标偏移和设置尺寸 */
+.shop-admin-icon-container {
+  /* 确保 i 元素作为容器能够正确设置尺寸和对齐 */
+  display: inline-flex; 
+  align-items: center; /* 垂直居中 */
+  justify-content: center; /* 水平居中 */
+  
+  /* 设置宽高为 2em，覆盖可能的默认样式 */
+  width: 2em;
+  height: 2em;
+  
+  /* 解决向下偏移，强制垂直居中对齐 */
+  vertical-align: middle; 
 }
 </style>
