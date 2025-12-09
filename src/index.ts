@@ -8,13 +8,7 @@ declare module 'koishi' {
     shop_items: ShopItem
     shop_purchases: ShopPurchase
     shop_usage: ShopUsage
-  }
-
-  // 扩展 Events 接口以支持货币系统事件
-  interface Events {
-    'currency/get'(userId: string): Promise<number> | number
-    'currency/set'(userId: string, amount: number): Promise<void> | void
-    'currency/add'(userId: string, amount: number): Promise<void> | void
+    currency: CurrencyData  // 添加货币表声明
   }
 }
 
@@ -40,7 +34,7 @@ export interface ShopItem {
   cooldown?: number
   enabled: boolean
   stock: number
-  role_level?: number  // 新增：角色等级
+  role_level?: number
   created_at: Date
   updated_at: Date
 }
@@ -50,7 +44,6 @@ export interface ShopPurchase {
   id: number
   item_id: number
   user_id: string
-  platform: string
   price: number
   purchased_at: Date
 }
@@ -60,11 +53,17 @@ export interface ShopUsage {
   id: number
   purchase_id: number
   user_id: string
-  platform: string
   item_id: number
   command?: string
   used_at: Date
   remaining_uses: number
+}
+
+// 货币数据表结构
+interface CurrencyData {
+  id: number
+  userId: string
+  money: number
 }
 
 // 消息提示词配置
@@ -88,9 +87,9 @@ export interface MessageConfig {
   usageEmpty: string
   adminUsageSuccess: string
   adminUsageList: string
-  roleUpgradeSuccess: string  // 新增：角色升级成功提示
-  roleAlreadyHigher: string   // 新增：权限已高于要购买的角色提示
-  rolePurchaseSuccess: string // 新增：角色购买成功提示
+  roleUpgradeSuccess: string
+  roleAlreadyHigher: string
+  rolePurchaseSuccess: string
 }
 
 // 主配置接口
@@ -102,7 +101,7 @@ export interface Config {
   defaultMaxUsage: number
   defaultCooldown: number
   defaultMoney: number
-  defaultRoleLevel: number  // 新增：默认角色等级
+  defaultRoleLevel: number
   adminUsers: string[]
   messages: MessageConfig
 }
@@ -130,14 +129,14 @@ export const Config: Schema<Config> = Schema.object({
   defaultMoney: Schema.number()
     .default(1000)
     .description('用户默认积分数量'),
-  defaultRoleLevel: Schema.number()  // 新增：默认角色等级配置
+  defaultRoleLevel: Schema.number()
     .default(1)
     .min(0)
     .max(5)
     .description('角色商品的默认等级（0-5，0为普通用户，5为最高权限）'),
   adminUsers: Schema.array(Schema.string())
     .default([])
-    .description('管理员用户列表，格式：平台:用户ID'),
+    .description('管理员用户列表（用户名）'),
   messages: Schema.object({
     shopTitle: Schema.string()
       .default('🏪 {currencyName}商店 (第{page}页/共{totalPages}页)')
@@ -196,13 +195,13 @@ export const Config: Schema<Config> = Schema.object({
     adminUsageList: Schema.string()
       .default('命令使用统计:\n{stats}')
       .description('命令使用统计列表'),
-    roleUpgradeSuccess: Schema.string()  // 新增：角色升级成功提示
+    roleUpgradeSuccess: Schema.string()
       .default('🎉 恭喜！你的用户等级已提升到 {level} 级！')
       .description('角色升级成功提示'),
-    roleAlreadyHigher: Schema.string()   // 新增：权限已高于要购买的角色提示
+    roleAlreadyHigher: Schema.string()
       .default('无法购买此角色！你当前的权限等级为 {currentLevel} 级，而此角色等级为 {itemLevel} 级。')
       .description('权限已高于要购买的角色提示'),
-    rolePurchaseSuccess: Schema.string() // 新增：角色购买成功提示
+    rolePurchaseSuccess: Schema.string()
       .default('购买成功！角色【{name}】已永久生效，你的权限等级已提升！')
       .description('角色购买成功提示'),
   }).description('消息提示词配置'),
@@ -220,276 +219,186 @@ function formatMessage(template: string, params: Record<string, any>, config: Co
   return message
 }
 
-export function apply(ctx: Context, config: Config) {
-  // 辅助函数：获取用户积分 - 修复类型错误
-  async function getUserBalance(ctx: Context, platform: string, userId: string, pluginConfig: Config): Promise<number> {
-    try {
-      const userKey = `${platform}:${userId}`
-      
-      if (pluginConfig.enableLogging) {
-        ctx.logger.debug(`[调试] 开始获取用户余额 - 用户: ${userKey}`)
-      }
-      
-      // ctx.emit() 返回的是数组，取第一个结果
-      const results = await ctx.emit('currency/get', userKey)
-      
-      if (pluginConfig.enableLogging) {
-        ctx.logger.debug(`[调试] currency/get 事件返回结果:`, results)
-        ctx.logger.debug(`[调试] 结果类型: ${typeof results}, 是否为数组: ${Array.isArray(results)}`)
-      }
-      
-      // 修复：检查 results 是否为数组且有内容
-      if (Array.isArray(results) && results.length > 0) {
-        const balance = results[0] // 取第一个事件处理器的返回值
-        
-        if (pluginConfig.enableLogging) {
-          ctx.logger.debug(`[调试] 获取到余额值: ${balance} (类型: ${typeof balance})`)
-        }
-        
-        if (balance === undefined || balance === null) {
-          if (pluginConfig.enableLogging) {
-            ctx.logger.debug(`[调试] 余额为 undefined/null，返回默认值: ${pluginConfig.defaultMoney}`)
-          }
-          return pluginConfig.defaultMoney
-        }
-        
-        const finalBalance = typeof balance === 'number' ? balance :
-                           (typeof balance === 'string' ? parseFloat(balance) : pluginConfig.defaultMoney)
-        
-        if (pluginConfig.enableLogging) {
-          ctx.logger.debug(`[调试] 最终返回余额: ${finalBalance}`)
-        }
-        
-        return finalBalance
-      } else {
-        if (pluginConfig.enableLogging) {
-          ctx.logger.debug(`[调试] 没有事件处理器响应或结果不是数组，返回默认值: ${pluginConfig.defaultMoney}`)
-        }
-        return pluginConfig.defaultMoney
-      }
-    } catch (error) {
-      ctx.logger.error('[错误] 获取用户积分失败:', error)
-      if (pluginConfig.enableLogging) {
-        ctx.logger.debug(`[调试] 获取余额失败，返回默认值: ${pluginConfig.defaultMoney}`)
-      }
-      return pluginConfig.defaultMoney
+// 辅助函数：直接获取用户余额
+async function getUserBalance(ctx: Context, userId: string, defaultMoney: number): Promise<number> {
+  try {
+    // 直接查询 currency 表获取余额
+    const currencies = await ctx.database.get('currency', { userId })
+    
+    if (currencies.length > 0) {
+      return currencies[0].money || defaultMoney
     }
+    
+    // 如果用户没有记录，创建默认记录
+    await ctx.database.create('currency', { userId, money: defaultMoney })
+    return defaultMoney
+  } catch (error) {
+    ctx.logger.error('获取用户余额失败:', error)
+    return defaultMoney
   }
+}
 
-  // 辅助函数：扣除用户积分 - 添加调试信息
-  async function deductUserBalance(ctx: Context, platform: string, userId: string, amount: number, pluginConfig: Config): Promise<boolean> {
-    try {
-      if (pluginConfig.enableLogging) {
-        ctx.logger.debug(`[调试] 开始扣除用户余额 - 用户: ${platform}:${userId}, 金额: ${amount}`)
-      }
-      
-      const balance = await getUserBalance(ctx, platform, userId, pluginConfig)
-      
-      if (pluginConfig.enableLogging) {
-        ctx.logger.debug(`[调试] 用户当前余额: ${balance}, 需要扣除: ${amount}`)
-      }
-      
-      if (balance < amount) {
-        if (pluginConfig.enableLogging) {
-          ctx.logger.debug(`[调试] 余额不足，扣除失败`)
-        }
-        return false
-      }
-      
-      const userKey = `${platform}:${userId}`
-      const newBalance = balance - amount
-      
-      if (pluginConfig.enableLogging) {
-        ctx.logger.debug(`[调试] 调用 currency/set 事件 - 用户: ${userKey}, 新余额: ${newBalance}`)
-      }
-      
-      // 触发 currency/set 事件，扣除积分
-      await ctx.emit('currency/set', userKey, newBalance)
-      
-      if (pluginConfig.enableLogging) {
-        ctx.logger.debug(`[调试] currency/set 事件调用成功`)
-      }
-      
-      return true
-    } catch (error) {
-      ctx.logger.error('[错误] 扣除积分失败:', error)
-      if (pluginConfig.enableLogging) {
-        ctx.logger.debug(`[调试] 扣除余额失败，返回 false`)
-      }
+// 辅助函数：直接扣除用户余额
+async function deductUserBalance(ctx: Context, userId: string, amount: number, defaultMoney: number): Promise<boolean> {
+  try {
+    // 直接查询当前余额
+    const currencies = await ctx.database.get('currency', { userId })
+    let currentBalance = defaultMoney
+    
+    if (currencies.length > 0) {
+      currentBalance = currencies[0].money
+    }
+    
+    if (currentBalance < amount) {
       return false
     }
-  }
-
-  // 辅助函数：检查用户是否为管理员
-  function isAdminUser(session: Session, config: Config): boolean {
-    const userKey = `${session.platform}:${session.userId}`
-    return config.adminUsers.includes(userKey)
-  }
-
-  // 辅助函数：检查并执行命令
-  async function executeCommandWithShopPermission(ctx: Context, session: Session, commandName: string, pluginConfig: Config): Promise<any> {
-    const { platform, userId } = session
-
-    const items = await ctx.database
-      .select('shop_items')
-      .where({
-        type: 'command',
-        command: commandName,
-        enabled: true
-      })
-      .limit(1)
-      .execute() as ShopItem[]
-
-    if (items.length === 0) {
-      return null
+    
+    // 直接更新余额
+    if (currencies.length > 0) {
+      await ctx.database.set('currency', { id: currencies[0].id }, { money: currentBalance - amount })
+    } else {
+      await ctx.database.create('currency', { userId, money: currentBalance - amount })
     }
+    
+    return true
+  } catch (error) {
+    ctx.logger.error('扣除用户余额失败:', error)
+    return false
+  }
+}
 
-    const item = items[0]
+// 辅助函数：检查用户是否为管理员
+function isAdminUser(session: Session, config: Config): boolean {
+  const userId = session.userId
+  if (!userId) return false
+  return config.adminUsers.includes(userId)
+}
 
-    const allUsages = await ctx.database
-      .select('shop_usage')
+// 辅助函数：检查并执行命令
+async function executeCommandWithShopPermission(ctx: Context, session: Session, commandName: string, pluginConfig: Config): Promise<any> {
+  const userId = session.userId
+  if (!userId) return null
+
+  const items = await ctx.database
+    .select('shop_items')
+    .where({
+      type: 'command',
+      command: commandName,
+      enabled: true
+    })
+    .limit(1)
+    .execute() as ShopItem[]
+
+  if (items.length === 0) {
+    return null
+  }
+
+  const item = items[0]
+
+  const allUsages = await ctx.database
+    .select('shop_usage')
+    .where({
+      user_id: userId,
+      item_id: item.id
+    })
+    .execute()
+
+  if (allUsages.length === 0) {
+    return null
+  }
+
+  const validUsages = allUsages.filter(usage => usage.remaining_uses > 0)
+
+  if (validUsages.length === 0) {
+    return pluginConfig.messages.usageExhausted
+  }
+
+  const usage = validUsages[0]
+
+  if (item.cooldown && item.cooldown > 0) {
+    const lastUsed = new Date(usage.used_at)
+    const cooldownMs = item.cooldown * 60 * 1000
+    const now = new Date()
+
+    if (now.getTime() - lastUsed.getTime() < cooldownMs) {
+      const remainingTime = Math.ceil((cooldownMs - (now.getTime() - lastUsed.getTime())) / 1000 / 60)
+      return formatMessage(pluginConfig.messages.usageCooldown, { remainingTime }, pluginConfig)
+    }
+  }
+
+  const newRemaining = usage.remaining_uses - 1
+  await ctx.database
+    .set('shop_usage', { id: usage.id }, {
+      used_at: new Date(),
+      remaining_uses: newRemaining
+    })
+
+  return {
+    success: true,
+    usageMessage: formatMessage(pluginConfig.messages.usageSuccess, {
+      remaining: newRemaining,
+      max: item.max_usage || 1
+    }, pluginConfig)
+  }
+}
+
+// 辅助函数：获取用户当前权限等级
+async function getUserAuthority(ctx: Context, userId: string): Promise<number> {
+  try {
+    // 查询 user 表获取权限 - 使用 name 字段
+    const users = await ctx.database
+      .select('user')
       .where({
-        user_id: userId,
-        platform: platform,
-        item_id: item.id
+        name: userId  // 使用用户名作为 name
       })
       .execute()
-
-    if (allUsages.length === 0) {
-      return null
+    
+    if (users.length > 0) {
+      return users[0].authority || 0
     }
+    
+    return 0
+  } catch (error) {
+    ctx.logger.error('获取用户权限失败:', error)
+    return 0
+  }
+}
 
-    const validUsages = allUsages.filter(usage => usage.remaining_uses > 0)
-
-    if (validUsages.length === 0) {
-      return pluginConfig.messages.usageExhausted
-    }
-
-    const usage = validUsages[0]
-
-    if (item.cooldown && item.cooldown > 0) {
-      const lastUsed = new Date(usage.used_at)
-      const cooldownMs = item.cooldown * 60 * 1000
-      const now = new Date()
-
-      if (now.getTime() - lastUsed.getTime() < cooldownMs) {
-        const remainingTime = Math.ceil((cooldownMs - (now.getTime() - lastUsed.getTime())) / 1000 / 60)
-        return formatMessage(pluginConfig.messages.usageCooldown, { remainingTime }, pluginConfig)
-      }
-    }
-
-    const newRemaining = usage.remaining_uses - 1
-    await ctx.database
-      .set('shop_usage', { id: usage.id }, {
-        used_at: new Date(),
-        remaining_uses: newRemaining
+// 辅助函数：更新用户角色等级
+async function updateUserRoleLevel(ctx: Context, userId: string, roleLevel: number): Promise<boolean> {
+  try {
+    // 更新 user 表的权限字段
+    const users = await ctx.database
+      .select('user')
+      .where({
+        name: userId  // 使用用户名作为 name
       })
-
-    return {
-      success: true,
-      usageMessage: formatMessage(pluginConfig.messages.usageSuccess, {
-        remaining: newRemaining,
-        max: item.max_usage || 1
-      }, pluginConfig)
-    }
-  }
-
-  // 新增：辅助函数 - 获取用户当前权限等级
-  async function getUserAuthority(ctx: Context, platform: string, userId: string): Promise<number> {
-    try {
-      const combinedName = `${platform}:${userId}`
-      
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 开始获取用户权限 - 用户: ${combinedName}`)
-      }
-      
-      const users = await ctx.database
-        .select('user')
-        .where({
-          name: combinedName
-        })
-        .execute()
-      
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 用户权限查询结果:`, users)
-      }
-      
-      if (users.length > 0) {
-        const authority = users[0].authority || 0
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 获取到用户权限: ${authority}`)
-        }
-        return authority
-      }
-      
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 用户不存在，返回默认权限 0`)
-      }
-      
-      return 0
-    } catch (error) {
-      ctx.logger.error('获取用户权限失败:', error)
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 获取用户权限失败，返回默认值 0`)
-      }
-      return 0
-    }
-  }
-
-  // 新增：辅助函数 - 更新用户角色等级
-  async function updateUserRoleLevel(ctx: Context, platform: string, userId: string, roleLevel: number): Promise<boolean> {
-    try {
-      const combinedName = `${platform}:${userId}`
-      
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 开始更新用户角色等级 - 用户: ${combinedName}, 等级: ${roleLevel}`)
-      }
-      
-      const users = await ctx.database
-        .select('user')
-        .where({
-          name: combinedName
-        })
-        .execute()
-      
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 用户查询结果:`, users)
-      }
-      
-      if (users.length === 0) {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 用户不存在，创建新用户`)
-        }
-        await ctx.database.create('user', {
-          name: combinedName,
+      .execute()
+    
+    if (users.length === 0) {
+      // 如果用户不存在，创建新用户
+      await ctx.database.create('user', {
+        name: userId,
+        authority: roleLevel
+      })
+    } else {
+      // 更新现有用户的权限
+      await ctx.database
+        .set('user', {
+          name: userId
+        }, {
           authority: roleLevel
         })
-      } else {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 用户存在，更新权限字段`)
-        }
-        await ctx.database
-          .set('user', {
-            name: combinedName
-          }, {
-            authority: roleLevel
-          })
-      }
-      
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 用户角色等级更新成功`)
-      }
-      
-      return true
-    } catch (error) {
-      ctx.logger.error('更新用户角色等级失败:', error)
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 用户角色等级更新失败`)
-      }
-      return false
     }
+    
+    return true
+  } catch (error) {
+    ctx.logger.error('更新用户角色等级失败:', error)
+    return false
   }
+}
 
+export function apply(ctx: Context, config: Config) {
   // 1. 数据库表定义
   ctx.model.extend('shop_items', {
     id: { type: 'integer', nullable: false, initial: 0 },
@@ -502,7 +411,7 @@ export function apply(ctx: Context, config: Config) {
     cooldown: { type: 'integer', initial: config.defaultCooldown },
     enabled: { type: 'boolean', initial: true },
     stock: { type: 'integer', initial: -1 },
-    role_level: { type: 'integer', initial: config.defaultRoleLevel }, // 新增：角色等级字段
+    role_level: { type: 'integer', initial: config.defaultRoleLevel },
     created_at: { type: 'timestamp', initial: new Date() },
     updated_at: { type: 'timestamp', initial: new Date() },
   }, {
@@ -515,7 +424,6 @@ export function apply(ctx: Context, config: Config) {
     id: { type: 'integer', nullable: false, initial: 0 },
     item_id: { type: 'integer' },
     user_id: { type: 'string' },
-    platform: { type: 'string' },
     price: { type: 'integer' },
     purchased_at: { type: 'timestamp', initial: new Date() },
   }, {
@@ -530,7 +438,6 @@ export function apply(ctx: Context, config: Config) {
     id: { type: 'integer', nullable: false, initial: 0 },
     purchase_id: { type: 'integer' },
     user_id: { type: 'string' },
-    platform: { type: 'string' },
     item_id: { type: 'integer' },
     command: { type: 'string', length: 100 },
     used_at: { type: 'timestamp', initial: new Date() },
@@ -549,10 +456,6 @@ export function apply(ctx: Context, config: Config) {
     .alias('商店')
     .action(async ({ session }, page = 1) => {
       if (!session) return '会话错误。'
-
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 执行商店指令 - 用户: ${session.platform}:${session.userId}, 页码: ${page}`)
-      }
 
       const pageSize = 5
       const skip = (page - 1) * pageSize
@@ -574,14 +477,7 @@ export function apply(ctx: Context, config: Config) {
       const totalPages = Math.ceil(totalItems / pageSize)
 
       if (items.length === 0) {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 商店商品为空`)
-        }
         return page === 1 ? config.messages.shopEmpty : '该页没有商品。'
-      }
-
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 找到 ${items.length} 个商品`)
       }
 
       let message = formatMessage(config.messages.shopTitle, { page, totalPages }, config) + '\n'
@@ -593,7 +489,6 @@ export function apply(ctx: Context, config: Config) {
           ? `\n   命令: ${item.command} (最多${item.max_usage}次)`
           : ''
         
-        // 新增：角色等级信息
         const roleInfo = item.type === 'role' && item.role_level !== undefined
           ? `\n   等级: ${item.role_level} 级`
           : ''
@@ -606,7 +501,7 @@ export function apply(ctx: Context, config: Config) {
           stock: stockText,
           type: item.type === 'command' ? '命令次数' : item.type === 'role' ? '角色权限' : '虚拟物品',
           commandInfo,
-          roleInfo  // 新增：角色信息
+          roleInfo
         }, config) + '\n\n'
       })
 
@@ -617,18 +512,15 @@ export function apply(ctx: Context, config: Config) {
       return message
     })
 
-  // 3. 购买指令 - 修改：角色类型商品不创建使用记录
+  // 3. 购买指令
   ctx.command(`${config.commandPrefix}buy <itemName>`, `购买商店商品`)
     .alias('购买')
     .action(async ({ session }, itemName) => {
       if (!session) return '会话错误。'
       if (!itemName) return '请指定要购买的商品名称。'
 
-      const { platform, userId } = session
-
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 执行购买指令 - 用户: ${platform}:${userId}, 商品: ${itemName}`)
-      }
+      const userId = session.userId
+      if (!userId) return '无法获取用户ID。'
 
       const items = await ctx.database
         .select('shop_items')
@@ -640,38 +532,21 @@ export function apply(ctx: Context, config: Config) {
         .execute() as ShopItem[]
 
       if (items.length === 0) {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 未找到商品: ${itemName}`)
-        }
         return config.messages.itemNotFound
       }
 
       const item = items[0]
-      
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 找到商品: ${item.name}, ID: ${item.id}, 价格: ${item.price}, 类型: ${item.type}, 库存: ${item.stock}`)
-      }
 
       if (item.stock === 0) {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 商品库存不足`)
-        }
         return formatMessage(config.messages.purchaseOutOfStock, { name: item.name }, config)
       }
 
-      // 新增：检查是否是角色类型，如果是则检查权限等级
+      // 检查是否是角色类型，如果是则检查权限等级
       if (item.type === 'role' && item.role_level !== undefined) {
-        const userAuthority = await getUserAuthority(ctx, platform!, userId!)
-        
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 角色商品检查 - 用户权限: ${userAuthority}, 商品等级: ${item.role_level}`)
-        }
+        const userAuthority = await getUserAuthority(ctx, userId)
         
         // 如果用户当前权限等级 >= 要购买的角色等级，则阻止购买
         if (userAuthority >= item.role_level) {
-          if (config.enableLogging) {
-            ctx.logger.debug(`[调试] 用户权限已高于或等于商品等级，禁止购买`)
-          }
           return formatMessage(config.messages.roleAlreadyHigher, {
             currentLevel: userAuthority,
             itemLevel: item.role_level
@@ -679,53 +554,30 @@ export function apply(ctx: Context, config: Config) {
         }
       }
 
-      const balance = await getUserBalance(ctx, platform!, userId!, config)
-      
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 购买检查 - 用户余额: ${balance}, 商品价格: ${item.price}`)
-      }
+      const balance = await getUserBalance(ctx, userId, config.defaultMoney)
       
       if (balance < item.price) {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 余额不足，购买失败`)
-        }
         return formatMessage(config.messages.purchaseInsufficient, {
           price: item.price,
           balance
         }, config)
       }
-
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 余额足够，开始扣除余额`)
-      }
       
-      const success = await deductUserBalance(ctx, platform!, userId!, item.price, config)
+      const success = await deductUserBalance(ctx, userId, item.price, config.defaultMoney)
       if (!success) {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 扣除余额失败`)
-        }
         return '购买失败，请稍后重试。'
-      }
-
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 余额扣除成功，创建购买记录`)
       }
 
       // 创建购买记录
       const purchase = await ctx.database.create('shop_purchases', {
         item_id: item.id,
         user_id: userId,
-        platform: platform,
         price: item.price,
       })
 
       // 如果是角色类型商品，只更新用户等级，不创建使用记录
       if (item.type === 'role' && item.role_level !== undefined) {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 处理角色类型商品，更新用户等级`)
-        }
-        
-        const upgradeSuccess = await updateUserRoleLevel(ctx, platform!, userId!, item.role_level)
+        const upgradeSuccess = await updateUserRoleLevel(ctx, userId, item.role_level)
         if (upgradeSuccess) {
           // 发送角色升级成功消息
           await session.send(formatMessage(config.messages.roleUpgradeSuccess, { level: item.role_level }, config))
@@ -736,14 +588,9 @@ export function apply(ctx: Context, config: Config) {
         }, config)
       } else {
         // 非角色类型商品创建使用记录
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 处理非角色类型商品，创建使用记录`)
-        }
-        
         await ctx.database.create('shop_usage', {
           purchase_id: purchase.id,
           user_id: userId,
-          platform: platform,
           item_id: item.id,
           command: item.command,
           remaining_uses: item.max_usage || 1,
@@ -756,10 +603,6 @@ export function apply(ctx: Context, config: Config) {
               updated_at: new Date()
             })
         }
-
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 购买流程完成，返回成功消息`)
-        }
         
         return formatMessage(config.messages.purchaseSuccess, {
           name: item.name,
@@ -769,30 +612,20 @@ export function apply(ctx: Context, config: Config) {
       }
     })
 
-// 4. 使用命令指令
+  // 4. 使用命令指令
   ctx.command(`${config.commandPrefix}use <commandName>`, `使用已购买的命令`)
     .alias('使用')
     .action(async ({ session }, commandName) => {
       if (!session) return '会话错误。'
       if (!commandName) return '请指定要使用的命令名称。'
 
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 执行使用指令 - 用户: ${session.platform}:${session.userId}, 命令: ${commandName}`)
-      }
-
       const result = await executeCommandWithShopPermission(ctx, session, commandName, config)
 
       if (result === null) {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 命令未在商店中配置或用户未购买`)
-        }
         return '该命令未在商店中配置或你未购买此命令。'
       }
 
       if (typeof result === 'string') {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 命令使用受限: ${result}`)
-        }
         return result
       }
 
@@ -802,9 +635,6 @@ export function apply(ctx: Context, config: Config) {
       // 然后执行命令
       const fullCommand = `${commandName}`
       try {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 执行命令: ${fullCommand}`)
-        }
         await session.execute(fullCommand)
       } catch (error) {
         ctx.logger.error(`执行命令 ${fullCommand} 失败:`, error)
@@ -814,30 +644,22 @@ export function apply(ctx: Context, config: Config) {
       return
     })
 
-  // 5. 查看我的商品指令 - 修改：不显示角色类型商品
+  // 5. 查看我的商品指令
   ctx.command(`${config.commandPrefix}myitems`, `查看已购买的商品`)
     .alias('我的商品')
     .action(async ({ session }) => {
       if (!session) return '会话错误。'
 
-      const { platform, userId } = session
-
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 执行我的商品指令 - 用户: ${platform}:${userId}`)
-      }
+      const userId = session.userId
+      if (!userId) return '无法获取用户ID。'
 
       // 查询所有购买记录，但只处理非角色类型商品
       const purchases = await ctx.database
         .select('shop_purchases')
         .where({
-          user_id: userId,
-          platform: platform
+          user_id: userId
         })
         .execute() as ShopPurchase[]
-
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 找到 ${purchases.length} 条购买记录`)
-      }
 
       if (purchases.length === 0) {
         return config.messages.usageEmpty
@@ -855,9 +677,6 @@ export function apply(ctx: Context, config: Config) {
 
         // 跳过角色类型商品
         if (item.type === 'role') {
-          if (config.enableLogging) {
-            ctx.logger.debug(`[调试] 跳过角色类型商品: ${item.name}`)
-          }
           continue
         }
 
@@ -890,14 +709,7 @@ export function apply(ctx: Context, config: Config) {
       }
 
       if (!hasValidItems) {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 没有有效的非角色商品`)
-        }
         return config.messages.usageEmpty
-      }
-
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 返回商品使用情况`)
       }
       
       return formatMessage(config.messages.usageInfo, { items: itemsText }, config)
@@ -920,14 +732,14 @@ export function apply(ctx: Context, config: Config) {
              '查看使用统计: .usage.list'
     })
 
-  // 添加商品 - 修改角色等级选项为 -r
+  // 添加商品
   admin.subcommand('.add <name> <price:number> <type>', '添加新商品')
     .option('description', '-d <description>', { fallback: '暂无描述' })
     .option('command', '-c <command>')
     .option('maxUsage', '-m <maxUsage:number>')
     .option('cooldown', '-cd <cooldown:number>')
     .option('stock', '-s <stock:number>', { fallback: -1 })
-    .option('roleLevel', '-r <roleLevel:number>', { fallback: config.defaultRoleLevel }) // 修改为 -r
+    .option('roleLevel', '-r <roleLevel:number>', { fallback: config.defaultRoleLevel })
     .action(async ({ session, options = {} }, name, price, type) => {
       if (!session) return '会话错误。'
       if (!isAdminUser(session, config)) {
@@ -946,10 +758,8 @@ export function apply(ctx: Context, config: Config) {
         return '命令类型商品必须指定 -c 参数'
       }
 
-      // 获取角色等级，确保有值
       const roleLevel = options.roleLevel !== undefined ? options.roleLevel : config.defaultRoleLevel
       
-      // 新增：验证角色等级范围
       if (type === 'role' && (roleLevel < 0 || roleLevel > 5)) {
         return '角色等级必须在 0-5 之间'
       }
@@ -969,17 +779,13 @@ export function apply(ctx: Context, config: Config) {
         updated_at: new Date(),
       })
 
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 添加商品成功 - ID: ${item.id}, 名称: ${item.name}`)
-      }
-
       return formatMessage(config.messages.addItemSuccess, {
         name: item.name,
         id: item.id
       }, config)
     })
 
-  // 更新商品 - 修改角色等级选项为 -r
+  // 更新商品
   admin.subcommand('.update <itemId:number>', '更新商品信息')
     .option('name', '-n <name>')
     .option('description', '-d <description>')
@@ -988,7 +794,7 @@ export function apply(ctx: Context, config: Config) {
     .option('enabled', '-e <enabled:boolean>')
     .option('maxUsage', '-m <maxUsage:number>')
     .option('cooldown', '-cd <cooldown:number>')
-    .option('roleLevel', '-r <roleLevel:number>') // 修改为 -r
+    .option('roleLevel', '-r <roleLevel:number>')
     .action(async ({ session, options = {} }, itemId) => {
       if (!session) return '会话错误。'
       if (!isAdminUser(session, config)) {
@@ -1008,13 +814,9 @@ export function apply(ctx: Context, config: Config) {
       if (options.enabled !== undefined) updateData.enabled = options.enabled
       if (options.maxUsage !== undefined) updateData.max_usage = options.maxUsage
       if (options.cooldown !== undefined) updateData.cooldown = options.cooldown
-      if (options.roleLevel !== undefined) updateData.role_level = options.roleLevel // 新增：更新角色等级
+      if (options.roleLevel !== undefined) updateData.role_level = options.roleLevel
 
       await ctx.database.set('shop_items', { id: itemId }, updateData)
-
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 更新商品成功 - ID: ${itemId}`)
-      }
 
       const item = items[0]
       return formatMessage(config.messages.updateItemSuccess, { name: item.name }, config)
@@ -1044,14 +846,10 @@ export function apply(ctx: Context, config: Config) {
       await ctx.database.remove('shop_purchases', { item_id: itemId })
       await ctx.database.remove('shop_items', { id: itemId })
 
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 删除商品成功 - ID: ${itemId}, 名称: ${item.name}`)
-      }
-
       return config.messages.deleteItemSuccess
     })
 
-  // 查看所有商品 - 新增显示角色等级
+  // 查看所有商品
   admin.subcommand('.list [page:number]', '查看所有商品')
     .action(async ({ session }, page = 1) => {
       if (!session) return '会话错误。'
@@ -1086,7 +884,6 @@ export function apply(ctx: Context, config: Config) {
         message += `价格: ${item.price}${config.currencyName}\n`
         message += `类型: ${item.type}\n`
         
-        // 新增：显示角色等级
         if (item.type === 'role' && item.role_level !== undefined) {
           message += `角色等级: ${item.role_level} 级\n`
         }
@@ -1115,13 +912,7 @@ export function apply(ctx: Context, config: Config) {
         return '参数错误，格式: .usage.add <用户> <命令> <次数>'
       }
 
-      const [platform, userId] = target.includes(':')
-        ? target.split(':', 2)
-        : [session.platform, target]
-
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 管理员增加使用次数 - 用户: ${platform}:${userId}, 命令: ${command}, 次数: ${amount}`)
-      }
+      const userId = target
 
       const items = await ctx.database
         .select('shop_items')
@@ -1143,7 +934,6 @@ export function apply(ctx: Context, config: Config) {
         .select('shop_usage')
         .where({
           user_id: userId,
-          platform: platform,
           item_id: item.id
         })
         .limit(1)
@@ -1153,14 +943,12 @@ export function apply(ctx: Context, config: Config) {
         const purchase = await ctx.database.create('shop_purchases', {
           item_id: item.id,
           user_id: userId,
-          platform: platform,
           price: 0,
         })
 
         await ctx.database.create('shop_usage', {
           purchase_id: purchase.id,
           user_id: userId,
-          platform: platform,
           item_id: item.id,
           command: item.command,
           remaining_uses: amount,
@@ -1174,12 +962,8 @@ export function apply(ctx: Context, config: Config) {
           })
       }
 
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 管理员增加使用次数成功`)
-      }
-
       return formatMessage(config.messages.adminUsageSuccess, {
-        target: `${platform}:${userId}`,
+        target: userId,
         command,
         amount
       }, config)
@@ -1215,7 +999,7 @@ export function apply(ctx: Context, config: Config) {
         if (items.length === 0) continue
 
         const item = items[0]
-        message += `用户: ${usage.platform}:${usage.user_id}\n`
+        message += `用户: ${usage.user_id}\n`
         message += `命令: ${item.command}\n`
         message += `剩余次数: ${usage.remaining_uses}/${item.max_usage}\n`
         message += `最后使用: ${usage.used_at.toLocaleString()}\n`
@@ -1225,71 +1009,57 @@ export function apply(ctx: Context, config: Config) {
       return message
     })
 
-	// 7. 中间件：自动拦截已购买的命令
-	if (config.enableLogging) {
-	  ctx.middleware(async (session, next) => {
-		const { content } = session
+  // 7. 中间件：自动拦截已购买的命令
+  ctx.middleware(async (session, next) => {
+    const { content } = session
 
-		// 检查是否是命令
-		if (content && content.startsWith(config.commandPrefix)) {
-		  const commandName = content.split(' ')[0].slice(config.commandPrefix.length)
+    // 检查是否是命令
+    if (content && content.startsWith(config.commandPrefix)) {
+      const commandName = content.split(' ')[0].slice(config.commandPrefix.length)
 
-		  // 跳过 $use 命令本身
-		  if (commandName === 'use' || commandName === '使用') {
-			return next()
-		  }
-
-      if (config.enableLogging) {
-        ctx.logger.debug(`[调试] 中间件拦截命令 - 用户: ${session.platform}:${session.userId}, 命令: ${commandName}`)
+      // 跳过 $use 命令本身
+      if (commandName === 'use' || commandName === '使用') {
+        return next()
       }
 
-		  // 检查是否是商店商品
-		  const shopResult = await executeCommandWithShopPermission(ctx, session, commandName, config)
+      // 检查是否是商店商品
+      const shopResult = await executeCommandWithShopPermission(ctx, session, commandName, config)
 
-		  if (shopResult === null) {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 命令不是商店商品，按正常流程执行`)
-        }
-			// 不是商店商品或用户未购买，按正常流程执行
-			return next()
-		  }
+      if (shopResult === null) {
+        // 不是商店商品或用户未购买，按正常流程执行
+        return next()
+      }
 
-		  if (typeof shopResult === 'string') {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 命令使用受限: ${shopResult}`)
-        }
-			// 返回冷却时间或次数用完的消息
-			return shopResult
-		  }
+      if (typeof shopResult === 'string') {
+        // 返回冷却时间或次数用完的消息
+        return shopResult
+      }
 
-		  // 先发送使用成功消息
-		  await session.send(shopResult.usageMessage)
+      // 先发送使用成功消息
+      await session.send(shopResult.usageMessage)
 
-		  // 然后执行命令
-		  const fullCommand = `${commandName}`
-		  try {
-        if (config.enableLogging) {
-          ctx.logger.debug(`[调试] 中间件执行命令: ${fullCommand}`)
-        }
-			await session.execute(fullCommand)
-		  } catch (error) {
-			ctx.logger.error(`执行命令 ${fullCommand} 失败:`, error)
-		  }
+      // 然后执行命令
+      const fullCommand = `${commandName}`
+      try {
+        await session.execute(fullCommand)
+      } catch (error) {
+        ctx.logger.error(`执行命令 ${fullCommand} 失败:`, error)
+      }
 
-		  // 不返回任何内容，因为消息已经发送了
-		  return
-		}
+      // 不返回任何内容，因为消息已经发送了
+      return
+    }
 
-		return next()
-	  })
-	}
+    return next()
+  })
 
+  // 8. 控制台集成
   ctx.inject(['console'], (ctx) => {
     const prodPath = resolve(__dirname, '../dist') 
-	  ctx.console.addEntry({
-		dev: resolve(__dirname, '../client/index.ts'),
-		prod: prodPath, 
-	  })
+    ctx.console.addEntry({
+      dev: resolve(__dirname, '../client/index.ts'),
+      prod: prodPath, 
+    })
 
     ctx.console.addListener('zhukong-shop/list', async () => {
       try {
@@ -1355,7 +1125,7 @@ export function apply(ctx: Context, config: Config) {
         if (data.cooldown !== undefined) updateData.cooldown = data.cooldown
         if (data.command !== undefined) updateData.command = data.command
         if (data.type !== undefined) updateData.type = data.type
-        if (data.role_level !== undefined) updateData.role_level = data.role_level // 新增：更新角色等级
+        if (data.role_level !== undefined) updateData.role_level = data.role_level
 
         await ctx.database.set('shop_items', { id: data.id }, updateData)
 
@@ -1399,6 +1169,5 @@ export function apply(ctx: Context, config: Config) {
   // 9. 启动日志
   ctx.on('ready', () => {
     ctx.logger.info(`${config.currencyName}商店插件已启动`)
-    ctx.logger.info(`调试模式: ${config.enableLogging ? '已启用' : '已禁用'}`)
   })
 }

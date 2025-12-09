@@ -1,238 +1,256 @@
 <template>
-  <div class="shop-container">
-    <!-- 头部操作栏 -->
-    <div class="shop-header">
-      <h2>积分商城管理</h2>
-      <div class="header-actions">
-        <div class="search-input">
-          <input 
-            v-model="searchKeyword" 
-            placeholder="搜索商品名称、描述或命令"
-            class="search-field"
-          />
-          <button v-if="searchKeyword" @click="searchKeyword = ''" class="clear-btn">
-            ×
-          </button>
+  <k-layout>
+    <template #header>
+      <k-header>
+        <div class="shop-header-content" style="display: flex; align-items: center; gap: 8px;">
+          <i class="k-icon" style="font-size: 18px;">
+            <ShopIcon />
+          </i>
+          <span>积分商城管理</span>
         </div>
-        <button class="add-btn" @click="openAddDialog">
-          <span class="btn-text">添加商品</span>
-        </button>
-      </div>
-    </div>
+      </k-header>
+    </template>
+    
+    <template #default>
+      <!-- 原有内容保持不变 -->
+      <div class="shop-container">
+        <!-- 头部操作栏 -->
+        <div class="shop-header">
+          <div class="header-actions">
+            <div class="search-input">
+              <input 
+                v-model="searchKeyword" 
+                placeholder="搜索商品名称、描述或命令"
+                class="search-field"
+              />
+              <button v-if="searchKeyword" @click="searchKeyword = ''" class="clear-btn">
+                ×
+              </button>
+            </div>
+            <button class="add-btn" @click="openAddDialog">
+              <span class="btn-text">添加商品</span>
+            </button>
+          </div>
+        </div>
 
-    <!-- 商品列表 -->
-    <div class="shop-list-card">
-      <div v-if="loading" class="loading-container">
-        加载中...
-      </div>
-      
-      <div v-else class="table-container">
-        <table class="shop-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>商品名称</th>
-              <th>描述</th>
-              <th>类型</th>
-              <th>价格</th>
-              <th>库存</th>
-              <th>状态</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in filteredItems" :key="item.id">
-              <td>{{ item.id }}</td>
-              <td>{{ item.name }}</td>
-              <td class="description-cell">{{ item.description || '-' }}</td>
-              <td>
-                <span :class="`type-tag type-${item.type}`">
-                  {{ getTypeText(item.type) }}
-                </span>
-              </td>
-              <td>{{ item.price }} 积分</td>
-              <td>{{ item.stock === -1 ? '无限' : item.stock }}</td>
-              <td>
-                <label class="switch">
-                  <input 
-                    type="checkbox" 
-                    :checked="item.enabled" 
-                    @change="toggleStatus(item)"
-                  />
-                  <span class="slider"></span>
-                  <span class="switch-text">{{ item.enabled ? '启用' : '禁用' }}</span>
-                </label>
-              </td>
-              <td>
-                <div class="action-buttons">
-                  <button class="action-btn edit-btn" @click="openEditDialog(item)">
-                    编辑
-                  </button>
-                  <button class="action-btn delete-btn" @click="deleteItem(item)">
-                    删除
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        
-        <div v-if="filteredItems.length === 0" class="empty-state">
-          <div class="empty-icon">📦</div>
-          <p class="empty-text">暂无商品数据</p>
-          <button class="add-empty-btn" @click="openAddDialog">添加第一个商品</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 添加/编辑商品对话框 -->
-    <div v-if="showDialog" class="modal-overlay" @click.self="showDialog = false">
-      <div class="modal-dialog">
-        <div class="modal-header">
-          <h3>{{ dialogTitle }}</h3>
-          <button class="close-btn" @click="showDialog = false">&times;</button>
-        </div>
-        
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label required">商品名称</label>
-            <input 
-              v-model="formData.name" 
-              class="form-input" 
-              placeholder="请输入商品名称"
-            />
+        <!-- 商品列表 -->
+        <k-card class="shop-list-card">
+          <div v-if="loading" class="loading-container">
+            加载中...
           </div>
           
-          <div class="form-group">
-            <label class="form-label">描述</label>
-            <textarea
-              v-model="formData.description"
-              class="form-textarea"
-              placeholder="请输入商品描述"
-              rows="3"
-            ></textarea>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label required">类型</label>
-            <select v-model="formData.type" class="form-select">
-              <option value="command">命令</option>
-              <option value="role">身份</option>
-              <option value="item">道具</option>
-            </select>
-          </div>
-          
-          <div v-if="formData.type === 'command'" class="form-group">
-            <label class="form-label required">执行命令</label>
-            <input 
-              v-model="formData.command" 
-              class="form-input" 
-              placeholder="例如: /search"
-            />
-          </div>
-          
-          <div v-if="formData.type === 'command'" class="form-group">
-            <label class="form-label">最大使用次数</label>
-            <input
-              v-model.number="formData.max_usage"
-              type="number"
-              min="1"
-              class="form-input"
-              placeholder="留空表示无限制"
-            />
-            <div class="form-hint">留空表示无限制</div>
-          </div>
-          
-          <div v-if="formData.type === 'command'" class="form-group">
-            <label class="form-label">冷却时间</label>
-            <input
-              v-model.number="formData.cooldown"
-              type="number"
-              min="0"
-              class="form-input"
-            />
-            <span class="form-unit">分钟</span>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label required">价格</label>
-            <input
-              v-model.number="formData.price"
-              type="number"
-              min="1"
-              class="form-input"
-            />
-            <span class="form-unit">积分</span>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label">库存类型</label>
-            <div class="radio-group">
-              <label class="radio-item">
-                <input
-                  type="radio"
-                  v-model="stockType"
-                  value="limited"
-                  class="radio-input"
-                />
-                <span class="radio-dot"></span>
-                <span class="radio-label">有限库存</span>
-              </label>
-              <label class="radio-item">
-                <input
-                  type="radio"
-                  v-model="stockType"
-                  value="unlimited"
-                  class="radio-input"
-                />
-                <span class="radio-dot"></span>
-                <span class="radio-label">无限库存</span>
-              </label>
+          <div v-else class="table-container">
+            <table class="shop-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>商品名称</th>
+                  <th>描述</th>
+                  <th>类型</th>
+                  <th>价格</th>
+                  <th>库存</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in filteredItems" :key="item.id">
+                  <td>{{ item.id }}</td>
+                  <td>{{ item.name }}</td>
+                  <td class="description-cell">{{ item.description || '-' }}</td>
+                  <td>
+                    <span :class="`type-tag type-${item.type}`">
+                      {{ getTypeText(item.type) }}
+                    </span>
+                  </td>
+                  <td>{{ item.price }} 积分</td>
+                  <td>{{ item.stock === -1 ? '无限' : item.stock }}</td>
+                  <td>
+                    <label class="switch">
+                      <input 
+                        type="checkbox" 
+                        :checked="item.enabled" 
+                        @change="toggleStatus(item)"
+                      />
+                      <span class="slider"></span>
+                      <span class="switch-text">{{ item.enabled ? '启用' : '禁用' }}</span>
+                    </label>
+                  </td>
+                  <td>
+                    <div class="action-buttons">
+                      <button class="action-btn edit-btn" @click="openEditDialog(item)">
+                        编辑
+                      </button>
+                      <button class="action-btn delete-btn" @click="deleteItem(item)">
+                        删除
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            
+            <div v-if="filteredItems.length === 0" class="empty-state">
+              <div class="empty-icon">📦</div>
+              <p class="empty-text">暂无商品数据</p>
+              <button class="add-empty-btn" @click="openAddDialog">添加第一个商品</button>
             </div>
           </div>
-          
-          <div v-if="stockType === 'limited'" class="form-group">
-            <label class="form-label">库存数量</label>
-            <input
-              v-model.number="formData.stock"
-              type="number"
-              min="0"
-              class="form-input"
-            />
+        </k-card>
+
+        <!-- 添加/编辑商品对话框 -->
+        <div v-if="showDialog" class="modal-overlay" @click.self="showDialog = false">
+          <div class="modal-dialog">
+            <div class="modal-header">
+              <h3>{{ dialogTitle }}</h3>
+              <button class="close-btn" @click="showDialog = false">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label required">商品名称</label>
+                <input 
+                  v-model="formData.name" 
+                  class="form-input" 
+                  placeholder="请输入商品名称"
+                />
+              </div>
+              
+              <div class="form-group">
+                <label class="form-label">描述</label>
+                <textarea
+                  v-model="formData.description"
+                  class="form-textarea"
+                  placeholder="请输入商品描述"
+                  rows="3"
+                ></textarea>
+              </div>
+              
+              <div class="form-group">
+                <label class="form-label required">类型</label>
+                <select v-model="formData.type" class="form-select">
+                  <option value="command">命令</option>
+                  <option value="role">身份</option>
+                  <option value="item">道具</option>
+                </select>
+              </div>
+              
+              <div v-if="formData.type === 'command'" class="form-group">
+                <label class="form-label required">执行命令</label>
+                <input 
+                  v-model="formData.command" 
+                  class="form-input" 
+                  placeholder="例如: /search"
+                />
+              </div>
+              
+              <div v-if="formData.type === 'command'" class="form-group">
+                <label class="form-label">最大使用次数</label>
+                <input
+                  v-model.number="formData.max_usage"
+                  type="number"
+                  min="1"
+                  class="form-input"
+                  placeholder="留空表示无限制"
+                />
+                <div class="form-hint">留空表示无限制</div>
+              </div>
+              
+              <div v-if="formData.type === 'command'" class="form-group">
+                <label class="form-label">冷却时间</label>
+                <input
+                  v-model.number="formData.cooldown"
+                  type="number"
+                  min="0"
+                  class="form-input"
+                />
+                <span class="form-unit">分钟</span>
+              </div>
+              
+              <div class="form-group">
+                <label class="form-label required">价格</label>
+                <input
+                  v-model.number="formData.price"
+                  type="number"
+                  min="1"
+                  class="form-input"
+                />
+                <span class="form-unit">积分</span>
+              </div>
+              
+              <div class="form-group">
+                <label class="form-label">库存类型</label>
+                <div class="radio-group">
+                  <label class="radio-item">
+                    <input
+                      type="radio"
+                      v-model="stockType"
+                      value="limited"
+                      class="radio-input"
+                    />
+                    <span class="radio-dot"></span>
+                    <span class="radio-label">有限库存</span>
+                  </label>
+                  <label class="radio-item">
+                    <input
+                      type="radio"
+                      v-model="stockType"
+                      value="unlimited"
+                      class="radio-input"
+                    />
+                    <span class="radio-dot"></span>
+                    <span class="radio-label">无限库存</span>
+                  </label>
+                </div>
+              </div>
+              
+              <div v-if="stockType === 'limited'" class="form-group">
+                <label class="form-label">库存数量</label>
+                <input
+                  v-model.number="formData.stock"
+                  type="number"
+                  min="0"
+                  class="form-input"
+                />
+              </div>
+              
+              <div class="form-group">
+                <label class="form-label">状态</label>
+                <label class="status-toggle">
+                  <input
+                    type="checkbox"
+                    v-model="formData.enabled"
+                    class="toggle-input"
+                  />
+                  <span class="toggle-slider"></span>
+                  <span class="toggle-text">{{ formData.enabled ? '启用' : '禁用' }}</span>
+                </label>
+              </div>
+            </div>
+            
+            <div class="modal-footer">
+              <button class="btn-cancel" @click="showDialog = false">
+                取消
+              </button>
+              <button class="btn-confirm" @click="submitForm" :disabled="submitting">
+                <span v-if="submitting">保存中...</span>
+                <span v-else>确定</span>
+              </button>
+            </div>
           </div>
-          
-          <div class="form-group">
-            <label class="form-label">状态</label>
-            <label class="status-toggle">
-              <input
-                type="checkbox"
-                v-model="formData.enabled"
-                class="toggle-input"
-              />
-              <span class="toggle-slider"></span>
-              <span class="toggle-text">{{ formData.enabled ? '启用' : '禁用' }}</span>
-            </label>
-          </div>
-        </div>
-        
-        <div class="modal-footer">
-          <button class="btn-cancel" @click="showDialog = false">
-            取消
-          </button>
-          <button class="btn-confirm" @click="submitForm" :disabled="submitting">
-            <span v-if="submitting">保存中...</span>
-            <span v-else>确定</span>
-          </button>
         </div>
       </div>
-    </div>
-  </div>
+    </template>
+  </k-layout>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { send, store } from '@koishijs/client'
 import type {} from '@koishijs/plugin-console'
+
+// 导入图标组件
+import ShopIcon from './icons/ShopIcon.vue'
 
 interface ShopItem {
   id: number
@@ -459,7 +477,7 @@ const deleteItem = async (item: ShopItem) => {
 </script>
 
 <style scoped>
-/* 这里使用与之前相同的 CSS 样式 */
+/* 保持所有原有样式不变 */
 .shop-container {
   padding: 20px;
   max-width: 1200px;
