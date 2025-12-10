@@ -140,6 +140,20 @@
                 />
               </div>
               
+              <!-- 根据index.ts更新：角色等级选项（0-5） -->
+              <div v-if="formData.type === 'role'" class="form-group">
+                <label class="form-label required">角色等级</label>
+                <select v-model="formData.role_level" class="form-select">
+                  <option value="0">0 - 普通用户</option>
+                  <option value="1">1 - 普通成员</option>
+                  <option value="2">2 - 管理员</option>
+                  <option value="3">3 - 群主</option>
+                  <option value="4">4 - 超级管理员</option>
+                  <option value="5">5 - 最高权限</option>
+                </select>
+                <div class="form-hint">角色等级对应 Koishi 的权限系统：0(最低) ~ 5(最高)</div>
+              </div>
+              
               <div v-if="formData.type === 'command'" class="form-group">
                 <label class="form-label">最大使用次数</label>
                 <input
@@ -245,7 +259,7 @@ import { ref, computed, onMounted } from 'vue'
 import { send, store } from '@koishijs/client'
 import type {} from '@koishijs/plugin-console'
 
-// 更改 3: 导入 ShopIcons (复数形式)
+// 导入 ShopIcons
 import ShopIcons from './icons/ShopIcons.vue'
 
 interface ShopItem {
@@ -258,6 +272,8 @@ interface ShopItem {
   command?: string
   max_usage?: number
   cooldown?: number
+  // 根据index.ts更新：使用role_level字段，范围0-5
+  role_level?: number
   enabled: boolean
   created_at?: Date
   updated_at?: Date
@@ -281,6 +297,8 @@ const formData = ref({
   command: '',
   max_usage: undefined as number | undefined,
   cooldown: 0,
+  // 根据index.ts更新：角色等级字段，默认为1（与后端defaultRoleLevel一致）
+  role_level: 1,
   enabled: true
 })
 
@@ -350,6 +368,8 @@ const resetForm = () => {
     command: '',
     max_usage: undefined,
     cooldown: 0,
+    // 根据index.ts更新：默认角色等级为1
+    role_level: 1,
     enabled: true
   }
 }
@@ -365,7 +385,9 @@ const openEditDialog = (item: ShopItem) => {
     description: item.description || '', 
     command: item.command || '',
     max_usage: item.max_usage,
-    stock: item.stock
+    stock: item.stock,
+    // 根据index.ts更新：使用role_level字段
+    role_level: item.role_level || 1
   }
   showDialog.value = true
 }
@@ -379,6 +401,15 @@ const validateForm = () => {
   if (formData.value.type === 'command' && !formData.value.command.trim()) {
     alert('请输入执行命令')
     return false
+  }
+  
+  // 根据index.ts更新：验证角色等级（0-5）
+  if (formData.value.type === 'role') {
+    const level = formData.value.role_level
+    if (level === undefined || level < 0 || level > 5) {
+      alert('角色等级必须在0-5之间')
+      return false
+    }
   }
   
   if (formData.value.price <= 0) {
@@ -412,6 +443,8 @@ const submitForm = async () => {
       command: formData.value.command.trim(),
       max_usage: formData.value.max_usage,
       cooldown: formData.value.cooldown || 0,
+      // 根据index.ts更新：使用role_level字段
+      role_level: formData.value.type === 'role' ? formData.value.role_level : undefined,
       enabled: formData.value.enabled
     }
     
